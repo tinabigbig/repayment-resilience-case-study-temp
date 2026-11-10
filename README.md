@@ -109,5 +109,3 @@ Who the legal lender is and which rules apply; cost-of-borrowing disclosure; the
 - [Criminal Code interest rate amendments (Canada Gazette, 2025)](https://gazette.gc.ca/rp-pr/p2/2025/2025-01-01/html/si-tr4-eng.html)
 - [FCAC: personal loans and cost of borrowing](https://www.canada.ca/en/financial-consumer-agency/services/rights-responsibilities/rights-credit-loans/rights-personal-loans.html)
 - [FCAC: fixing errors on your credit report](https://www.canada.ca/en/financial-consumer-agency/services/credit-reports-score/check-errors.html)
-
-Tina Liang
