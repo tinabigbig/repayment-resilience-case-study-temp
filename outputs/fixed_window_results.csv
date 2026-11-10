@@ -1,0 +1,6 @@
+measure,aligned,control,difference,ci_low,ci_high,unit
+on time vs own due date,0.8058,0.7195,8.62,5.78,11.47,points
+first payment collected by day 30,0.7652,0.7796,-1.43,-4.25,1.38,points
+first payment collected by day 60,0.92,0.9037,1.63,-0.28,3.53,points
+CAD collected per customer by day 30,111.189,110.9119,0.28,-6.86,7.42,CAD
+CAD collected per customer by day 60,134.9887,128.2651,6.72,-0.33,13.77,CAD

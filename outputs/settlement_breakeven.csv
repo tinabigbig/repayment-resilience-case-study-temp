@@ -1,0 +1,10 @@
+settlement_share,collections_recovery,breakeven_completion_rate,reading
+0.4,0.15,0.214,worth it if more than 21% complete
+0.4,0.25,0.4,worth it if more than 40% complete
+0.4,0.35,0.833,worth it if more than 83% complete
+0.5,0.15,0.158,worth it if more than 16% complete
+0.5,0.25,0.267,worth it if more than 27% complete
+0.5,0.35,0.455,worth it if more than 45% complete
+0.6,0.15,0.125,worth it if more than 13% complete
+0.6,0.25,0.2,worth it if more than 20% complete
+0.6,0.35,0.313,worth it if more than 31% complete

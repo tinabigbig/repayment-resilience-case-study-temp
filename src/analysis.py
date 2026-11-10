@@ -5,6 +5,7 @@ All data here is made up. Run from the project root:
     python src/analysis.py
 """
 
+from decimal import Decimal, ROUND_HALF_UP
 from pathlib import Path
 
 import numpy as np
@@ -97,6 +98,23 @@ p_roll = np.clip(
 )
 rolled_60plus = np.where((dpd > 0) & (dpd <= 30), rng.binomial(1, p_roll), np.nan)
 
+# Fixed-window outcome (added after review).
+# Moving the due date also moves when "on time" is judged, so I also check
+# whether the first payment was collected by a fixed day after assignment.
+# Control due dates fall 5 to 25 days after assignment; aligned dates move
+# by the payday gap. Late payers pay 5 to 45 days after the due date, and
+# 30% of late payers don't pay within 60 days.
+due_day_control = rng.integers(5, 26, N_ACCOUNTS)
+never_pays = rng.random(N_ACCOUNTS) < 0.30
+late_by = rng.integers(5, 46, N_ACCOUNTS)
+
+due_day = np.where(variant == "aligned", np.clip(due_day_control + payday_gap, 1, 45), due_day_control)
+pay_day = np.where(paid_next == 1, due_day, np.where(never_pays, 999, due_day + late_by))
+collected_by_day30 = (pay_day <= 30).astype(int)
+collected_by_day60 = (pay_day <= 60).astype(int)
+amount_by_day30 = monthly_payment * collected_by_day30
+amount_by_day60 = monthly_payment * collected_by_day60
+
 
 # ---------------------------------------------------------------
 # 4. Put it in one table and save it
@@ -121,6 +139,11 @@ accounts = pd.DataFrame({
     "next_payment_success": paid_next,
     "cured_within_60d": cured_60d,
     "rolled_to_60plus": rolled_60plus,
+    "due_day_after_assignment": due_day,
+    "collected_by_day30": collected_by_day30,
+    "collected_by_day60": collected_by_day60,
+    "amount_collected_by_day30_cad": amount_by_day30.round(2),
+    "amount_collected_by_day60_cad": amount_by_day60.round(2),
 })
 accounts.to_csv(DATA / "synthetic_accounts.csv", index=False)
 
@@ -153,6 +176,29 @@ control = trial.loc[trial["variant"] == "control", "next_payment_success"]
 lift = aligned.mean() - control.mean()
 se = np.sqrt(aligned.var(ddof=1) / len(aligned) + control.var(ddof=1) / len(control))
 ci_low, ci_high = lift - 1.96 * se, lift + 1.96 * se
+
+
+# Same comparison on a fixed calendar: first payment collected by day 30 and day 60.
+def diff_with_ci(column):
+    a = trial.loc[trial["variant"] == "aligned", column]
+    c = trial.loc[trial["variant"] == "control", column]
+    d = a.mean() - c.mean()
+    e = np.sqrt(a.var(ddof=1) / len(a) + c.var(ddof=1) / len(c))
+    return a.mean(), c.mean(), d, d - 1.96 * e, d + 1.96 * e
+
+window_rows = []
+for label, column in [("on time vs own due date", "next_payment_success"),
+                      ("first payment collected by day 30", "collected_by_day30"),
+                      ("first payment collected by day 60", "collected_by_day60"),
+                      ("CAD collected per customer by day 30", "amount_collected_by_day30_cad"),
+                      ("CAD collected per customer by day 60", "amount_collected_by_day60_cad")]:
+    a_rate, c_rate, d, lo, hi = diff_with_ci(column)
+    scale = 1 if column.startswith("amount") else 100   # dollars stay dollars, rates become points
+    window_rows.append({"measure": label, "aligned": round(a_rate, 4), "control": round(c_rate, 4),
+                        "difference": round(d * scale, 2), "ci_low": round(lo * scale, 2), "ci_high": round(hi * scale, 2),
+                        "unit": "CAD" if scale == 1 else "points"})
+windows = pd.DataFrame(window_rows)
+windows.to_csv(OUT / "fixed_window_results.csv", index=False)
 
 
 # ---------------------------------------------------------------
@@ -205,15 +251,52 @@ pd.DataFrame([{
 # 8. Short write-up of the numbers
 # ---------------------------------------------------------------
 
+def one_dp(x):
+    """Round to one decimal the way people expect (-4.25 becomes -4.3, not -4.2)."""
+    return str(Decimal(str(x)).quantize(Decimal("0.1"), rounding=ROUND_HALF_UP))
+
+
+w = windows
 summary = f"""# Results on simulated data
 
-- {N_ACCOUNTS:,} simulated accounts, of which {len(trial):,} were eligible and randomly assigned.
-- On-time next payment: {aligned.mean():.1%} for aligned due dates vs {control.mean():.1%} for control.
-- Difference: {lift * 100:.2f} percentage points (95% CI {ci_low * 100:.2f} to {ci_high * 100:.2f}).
-- I built a {TREATMENT_EFFECT * 100:.1f}-point lift into the simulation, so this shows the analysis works. It says nothing about real borrowers.
-- Sample size needed (72% baseline, 5% significance, 80% power): 7,733 per group for a 2-point lift, 3,395 for 3 points, 1,191 for 5 points. This demo is too small to detect 3 points.
-- {len(to_review)} accounts would go to a person for a hardship affordability review.
-- No charge-off or recovery data exists here, so I don't estimate savings.
+## Bottom line
+
+Don't roll it out yet. Customers paid on time more often against their own due date,
+but that didn't turn into clearly more money collected by day 60. I'd keep testing.
+
+## What I tested
+
+{N_ACCOUNTS:,} simulated accounts. {len(trial):,} were eligible and split at random:
+{len(aligned):,} could move their due date to payday, {len(control):,} kept their current date.
+
+"95% CI" below is the range the true difference most likely falls in.
+If that range includes zero, the result isn't clear.
+
+## On time against their own due date
+
+- Aligned {aligned.mean():.1%} vs control {control.mean():.1%}, a difference of {lift * 100:+.1f} points (95% CI {ci_low * 100:.1f} to {ci_high * 100:.1f}).
+- I built a {TREATMENT_EFFECT * 100:.1f}-point lift into the simulation, so this only shows the analysis picks it up.
+
+## Money in hand on a fixed calendar (the measure that decides)
+
+- First payment collected by day 30: {one_dp(w.loc[1, "difference"])} points (95% CI {one_dp(w.loc[1, "ci_low"])} to {one_dp(w.loc[1, "ci_high"])}).
+- First payment collected by day 60: +{one_dp(w.loc[2, "difference"])} points (95% CI {one_dp(w.loc[2, "ci_low"])} to {one_dp(w.loc[2, "ci_high"])}).
+- Dollars collected per customer by day 60: {windows.loc[4, "difference"]:+.2f} CAD (95% CI {windows.loc[4, "ci_low"]:.2f} to {windows.loc[4, "ci_high"]:.2f}).
+- Both day-60 ranges include zero, so there's no clear gain in collections.
+
+## How big a real test would need to be
+
+Planned on day-60 collection (90.4% baseline, 5% significance, 80% power):
+3,085 customers per group to detect a 2-point lift, 1,293 for 3 points, 404 for 5.
+This demo has about 1,700 per group, enough for 3 points but not 2.
+
+## Hardship
+
+{len(to_review)} accounts would go to a person for an affordability review. Nobody is auto-approved.
+
+## What this can't tell you
+
+There's no charge-off or recovery data here, so I don't estimate savings.
 """
 (OUT / "summary.md").write_text(summary)
 print(summary)
